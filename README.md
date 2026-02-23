@@ -4,7 +4,7 @@ A regulatory document Q&A agent built on Cloudflare's AI platform. Upload policy
 
 Built as part of the Cloudflare AI application assignment.
 
-# Live Demo: https://cf-ai-policy-agent.cynthia-zhang-2016.workers.dev/
+**Live Demo:** https://cf-ai-policy-agent.cynthia-zhang-2016.workers.dev/
 
 ---
 

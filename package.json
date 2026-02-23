@@ -1,0 +1,21 @@
+{
+  "name": "cf-ai-policy-agent",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "type-check": "tsc --noEmit",
+    "setup:vectorize": "wrangler vectorize create policy-docs --dimensions=768 --metric=cosine"
+  },
+  "dependencies": {
+    "agents": "^0.5.0",
+    "ai": "^6.0.0",
+    "workers-ai-provider": "^3.1.1"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250214.0",
+    "typescript": "^5.7.3",
+    "wrangler": "^4.4.0"
+  }
+}

@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Policy Document Q&amp;A Agent</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: 'Inter', system-ui, sans-serif; }
+    #messages { scroll-behavior: smooth; }
+    .message-bubble { animation: fadeIn 0.2s ease-in; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+    pre { white-space: pre-wrap; word-wrap: break-word; }
+    .typing-dot { animation: blink 1.2s infinite; }
+    .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+    .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes blink { 0%, 80%, 100% { opacity: 0; } 40% { opacity: 1; } }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col">
+
+  <!-- Header -->
+  <header class="border-b border-slate-800 px-6 py-4 flex items-center gap-3">
+    <div class="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-sm font-bold">⚖</div>
+    <div>
+      <h1 class="text-base font-semibold">Policy Document Q&amp;A Agent</h1>
+      <p class="text-xs text-slate-400">Powered by Llama 3.3 · Cloudflare Workers AI + Vectorize</p>
+    </div>
+    <div class="ml-auto flex items-center gap-2">
+      <span id="conn-indicator" class="w-2 h-2 rounded-full bg-red-500"></span>
+      <span id="conn-label" class="text-xs text-slate-400">Connecting…</span>
+    </div>
+  </header>
+
+  <div class="flex flex-1 overflow-hidden">
+
+    <!-- Sidebar: Document Upload -->
+    <aside class="w-72 border-r border-slate-800 flex flex-col bg-slate-900">
+      <div class="p-4 border-b border-slate-800">
+        <h2 class="text-sm font-semibold mb-1">Upload Policy Document</h2>
+        <p class="text-xs text-slate-400">Paste text from EU AI Act, PIPEDA, GDPR, or any regulatory document. The agent will index it and answer questions with citations.</p>
+      </div>
+      <div class="p-4 flex flex-col gap-3 flex-1 overflow-y-auto">
+        <div>
+          <label class="block text-xs font-medium text-slate-300 mb-1">Document Name</label>
+          <input id="doc-name" type="text" placeholder="e.g. EU AI Act 2024"
+            class="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 text-slate-100 placeholder-slate-500" />
+        </div>
+        <div class="flex-1">
+          <label class="block text-xs font-medium text-slate-300 mb-1">Document Text</label>
+          <textarea id="doc-text" rows="12" placeholder="Paste regulatory document text here…"
+            class="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 text-slate-100 placeholder-slate-500 resize-none h-48"></textarea>
+        </div>
+        <button id="upload-btn" onclick="uploadDocument()"
+          class="w-full bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium py-2 px-4 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+          Index Document
+        </button>
+        <div id="upload-status" class="text-xs text-slate-400 hidden"></div>
+
+        <!-- Indexed docs list -->
+        <div id="docs-section" class="hidden mt-2">
+          <p class="text-xs font-medium text-slate-300 mb-2">Indexed Documents</p>
+          <ul id="docs-list" class="space-y-1 text-xs text-slate-400"></ul>
+        </div>
+
+        <!-- Sample text helper -->
+        <div class="border-t border-slate-800 pt-3">
+          <p class="text-xs font-medium text-slate-300 mb-2">Try a sample snippet</p>
+          <button onclick="loadSample('eu-ai-act')"
+            class="text-xs text-blue-400 hover:text-blue-300 block mb-1">→ EU AI Act excerpt</button>
+          <button onclick="loadSample('pipeda')"
+            class="text-xs text-blue-400 hover:text-blue-300 block">→ PIPEDA excerpt</button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main: Chat -->
+    <main class="flex-1 flex flex-col overflow-hidden">
+      <div id="messages" class="flex-1 overflow-y-auto p-6 space-y-4">
+        <!-- Welcome message -->
+        <div class="message-bubble flex gap-3">
+          <div class="w-7 h-7 rounded-full bg-blue-600 flex-shrink-0 flex items-center justify-center text-xs">⚖</div>
+          <div class="bg-slate-800 rounded-xl rounded-tl-sm px-4 py-3 max-w-2xl text-sm text-slate-200 leading-relaxed">
+            <p>Hello! I'm your regulatory policy expert. Upload a policy document on the left, then ask me anything — I'll answer with specific citations from the text.</p>
+            <p class="mt-2 text-slate-400 text-xs">No document? No problem — I can still answer general questions about the EU AI Act, GDPR, PIPEDA, and other frameworks from my training knowledge.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Input bar -->
+      <div class="border-t border-slate-800 p-4 bg-slate-900">
+        <div class="flex gap-3 items-end">
+          <textarea id="chat-input" rows="1"
+            placeholder="Ask about a regulation, clause, or compliance requirement…"
+            onkeydown="handleKey(event)"
+            oninput="autoResize(this)"
+            class="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 text-slate-100 placeholder-slate-500 resize-none max-h-40 leading-relaxed"></textarea>
+          <button id="send-btn" onclick="sendMessage()"
+            class="bg-blue-600 hover:bg-blue-500 text-white rounded-xl px-4 py-3 text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0">
+            Send
+          </button>
+        </div>
+        <div class="flex items-center justify-between mt-2 px-1">
+          <span class="text-xs text-slate-500">Enter to send · Shift+Enter for new line</span>
+          <button onclick="clearHistory()" class="text-xs text-slate-500 hover:text-slate-300 transition-colors">Clear history</button>
+        </div>
+      </div>
+    </main>
+  </div>
+
+<script>
+// ── Session ────────────────────────────────────────────────────────────────
+const SESSION_KEY = "policy-agent-session";
+let sessionId = sessionStorage.getItem(SESSION_KEY);
+if (!sessionId) {
+  sessionId = crypto.randomUUID();
+  sessionStorage.setItem(SESSION_KEY, sessionId);
+}
+
+// ── WebSocket ──────────────────────────────────────────────────────────────
+let ws = null;
+let currentAssistantEl = null;
+let isWaiting = false;
+const indexedDocs = JSON.parse(localStorage.getItem("indexed-docs") || "[]");
+
+function wsUrl() {
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${location.host}/agents/policy-chat-agent/${sessionId}`;
+}
+
+function connect() {
+  ws = new WebSocket(wsUrl());
+
+  ws.onopen = () => {
+    setConnStatus(true);
+    ws.send(JSON.stringify({ type: "get_history" }));
+  };
+
+  ws.onclose = () => {
+    setConnStatus(false);
+    setTimeout(connect, 3000);
+  };
+
+  ws.onerror = () => setConnStatus(false);
+
+  ws.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+
+    if (msg.type === "history") {
+      for (const m of msg.messages) {
+        appendMessage(m.role, m.content, false);
+      }
+      return;
+    }
+
+    if (msg.type === "chunk") {
+      if (!currentAssistantEl) {
+        currentAssistantEl = appendMessage("assistant", "", true);
+      }
+      const pre = currentAssistantEl.querySelector("pre");
+      pre.textContent += msg.content;
+      scrollToBottom();
+      return;
+    }
+
+    if (msg.type === "done") {
+      currentAssistantEl = null;
+      isWaiting = false;
+      setSendEnabled(true);
+      scrollToBottom();
+      return;
+    }
+
+    if (msg.type === "cleared") {
+      document.getElementById("messages").innerHTML = "";
+      appendMessage("assistant", "Conversation history cleared.", false);
+      isWaiting = false;
+      setSendEnabled(true);
+      return;
+    }
+
+    if (msg.type === "error") {
+      if (currentAssistantEl) {
+        const pre = currentAssistantEl.querySelector("pre");
+        pre.textContent = `⚠ Error: ${msg.error}`;
+        pre.classList.add("text-red-400");
+        currentAssistantEl = null;
+      } else {
+        appendMessage("assistant", `⚠ Error: ${msg.error}`, false);
+      }
+      isWaiting = false;
+      setSendEnabled(true);
+    }
+  };
+}
+
+// ── Chat ───────────────────────────────────────────────────────────────────
+function sendMessage() {
+  const input = document.getElementById("chat-input");
+  const text = input.value.trim();
+  if (!text || isWaiting || !ws || ws.readyState !== WebSocket.OPEN) return;
+
+  appendMessage("user", text, false);
+  input.value = "";
+  input.style.height = "auto";
+
+  isWaiting = true;
+  setSendEnabled(false);
+  currentAssistantEl = appendMessage("assistant", "", true);
+  // add typing indicator inside the bubble
+  const pre = currentAssistantEl.querySelector("pre");
+  pre.innerHTML = '<span class="text-slate-500 text-xs">Thinking<span class="typing-dot">.</span><span class="typing-dot">.</span><span class="typing-dot">.</span></span>';
+
+  ws.send(JSON.stringify({ type: "chat", content: text }));
+}
+
+function clearHistory() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({ type: "clear" }));
+}
+
+function handleKey(e) {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+}
+
+function autoResize(el) {
+  el.style.height = "auto";
+  el.style.height = Math.min(el.scrollHeight, 160) + "px";
+}
+
+// ── DOM helpers ────────────────────────────────────────────────────────────
+function appendMessage(role, content, streaming) {
+  const container = document.getElementById("messages");
+  const wrap = document.createElement("div");
+  wrap.className = "message-bubble flex gap-3" + (role === "user" ? " flex-row-reverse" : "");
+
+  const avatar = document.createElement("div");
+  avatar.className = role === "user"
+    ? "w-7 h-7 rounded-full bg-slate-600 flex-shrink-0 flex items-center justify-center text-xs"
+    : "w-7 h-7 rounded-full bg-blue-600 flex-shrink-0 flex items-center justify-center text-xs";
+  avatar.textContent = role === "user" ? "You" : "⚖";
+
+  const bubble = document.createElement("div");
+  bubble.className = role === "user"
+    ? "bg-blue-700 rounded-xl rounded-tr-sm px-4 py-3 max-w-2xl text-sm text-white leading-relaxed"
+    : "bg-slate-800 rounded-xl rounded-tl-sm px-4 py-3 max-w-2xl text-sm text-slate-200 leading-relaxed";
+
+  const pre = document.createElement("pre");
+  pre.className = "font-sans whitespace-pre-wrap";
+  pre.textContent = content;
+  bubble.appendChild(pre);
+  wrap.appendChild(avatar);
+  wrap.appendChild(bubble);
+  container.appendChild(wrap);
+  scrollToBottom();
+  return bubble;
+}
+
+function scrollToBottom() {
+  const msgs = document.getElementById("messages");
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function setConnStatus(connected) {
+  document.getElementById("conn-indicator").className =
+    `w-2 h-2 rounded-full ${connected ? "bg-green-500" : "bg-red-500"}`;
+  document.getElementById("conn-label").textContent = connected ? "Connected" : "Reconnecting…";
+}
+
+function setSendEnabled(enabled) {
+  const btn = document.getElementById("send-btn");
+  btn.disabled = !enabled;
+}
+
+// ── Document upload ────────────────────────────────────────────────────────
+async function uploadDocument() {
+  const name = document.getElementById("doc-name").value.trim();
+  const text = document.getElementById("doc-text").value.trim();
+  const status = document.getElementById("upload-status");
+  const btn = document.getElementById("upload-btn");
+
+  if (!name || !text) {
+    showStatus("Please provide both a document name and text.", "text-yellow-400");
+    return;
+  }
+
+  btn.disabled = true;
+  showStatus("Submitting for indexing…", "text-slate-400");
+
+  try {
+    const res = await fetch("/api/ingest", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, docName: name }),
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      showStatus(`Error: ${data.error}`, "text-red-400");
+      btn.disabled = false;
+      return;
+    }
+
+    showStatus(`Indexing started (ID: ${data.id.slice(0, 8)}…). Polling status…`, "text-blue-400");
+    pollWorkflow(data.id, name);
+
+    // Track in local list
+    indexedDocs.push({ name, id: data.id });
+    localStorage.setItem("indexed-docs", JSON.stringify(indexedDocs));
+    renderDocsList();
+
+  } catch (e) {
+    showStatus(`Network error: ${e}`, "text-red-400");
+    btn.disabled = false;
+  }
+}
+
+async function pollWorkflow(id, name, attempts = 0) {
+  if (attempts > 60) {
+    showStatus("Indexing is taking longer than expected. Check back later.", "text-yellow-400");
+    document.getElementById("upload-btn").disabled = false;
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/workflow/${id}`);
+    const data = await res.json();
+    const state = data.status?.toLowerCase() ?? "unknown";
+
+    if (state === "complete") {
+      showStatus(`✓ "${name}" indexed successfully!`, "text-green-400");
+      document.getElementById("doc-name").value = "";
+      document.getElementById("doc-text").value = "";
+      document.getElementById("upload-btn").disabled = false;
+    } else if (state === "errored") {
+      showStatus(`Indexing failed. Please try again.`, "text-red-400");
+      document.getElementById("upload-btn").disabled = false;
+    } else {
+      setTimeout(() => pollWorkflow(id, name, attempts + 1), 2000);
+    }
+  } catch {
+    setTimeout(() => pollWorkflow(id, name, attempts + 1), 3000);
+  }
+}
+
+function showStatus(msg, cls) {
+  const el = document.getElementById("upload-status");
+  el.className = `text-xs ${cls}`;
+  el.textContent = msg;
+  el.classList.remove("hidden");
+}
+
+function renderDocsList() {
+  const section = document.getElementById("docs-section");
+  const list = document.getElementById("docs-list");
+  if (indexedDocs.length === 0) { section.classList.add("hidden"); return; }
+  section.classList.remove("hidden");
+  list.innerHTML = indexedDocs.map(d => `<li>📄 ${d.name}</li>`).join("");
+}
+
+// ── Sample documents ───────────────────────────────────────────────────────
+const SAMPLES = {
+  "eu-ai-act": {
+    name: "EU AI Act 2024 (Sample)",
+    text: `REGULATION (EU) 2024/1689 OF THE EUROPEAN PARLIAMENT AND OF THE COUNCIL
+Laying down harmonised rules on artificial intelligence (Artificial Intelligence Act)
+
+Article 1 - Subject matter
+This Regulation lays down harmonised rules on the development, the placing on the market, the putting into service and the use of artificial intelligence systems (AI systems) in the Union.
+
+Article 5 - Prohibited AI practices
+1. The following AI practices shall be prohibited:
+(a) the placing on the market, the putting into service or the use of an AI system that deploys subliminal techniques beyond a person's consciousness or purposefully manipulative or deceptive techniques, with the objective, or the effect, of materially distorting the behaviour of a person or a group of persons by appreciably impairing their ability to make an informed decision, thereby causing them to take a decision that they would not have otherwise taken in a manner that causes or is reasonably likely to cause significant harm to that person, another person or group of persons;
+(b) the placing on the market, the putting into service or the use of an AI system that exploits any of the vulnerabilities of a natural person or a specific group of persons due to their age, disability or a specific social or economic situation, with the objective, or the effect, of materially distorting the behaviour of that person or a member of that group;
+(c) the placing on the market, the putting into service or the use of AI systems for the evaluation or classification of natural persons or groups of natural persons over a certain period of time based on their social behaviour or known, inferred or predicted personal or personality characteristics, with the social score leading to either or both of the following: (i) detrimental or unfavourable treatment of certain natural persons or groups thereof in social contexts that are unrelated to the contexts in which the data was originally generated or collected; (ii) detrimental or unfavourable treatment of certain natural persons or groups thereof that is unjustified or disproportionate to their social behaviour or its gravity;
+(d) the placing on the market, the putting into service, or the use of AI systems for making risk assessments of natural persons in order to assess or predict the risk of a natural person committing a criminal offence, based solely on the profiling of a natural person or on assessing their personality traits and characteristics; this prohibition shall not apply to AI systems used to support the human assessment of the involvement of a person in a criminal activity, which is already based on objective and verifiable facts directly linked to a criminal activity;
+
+Article 6 - Classification rules for high-risk AI systems
+1. Irrespective of whether an AI system is placed on the market or put into service independently from the products referred to in points (a) and (b), that AI system shall be considered to be high-risk where both of the following conditions are fulfilled:
+(a) the AI system is intended to be used as a safety component of a product, or the AI system is itself a product, covered by the Union harmonisation legislation listed in Annex I;
+(b) the product whose safety component pursuant to point (a) is the AI system, or the AI system itself as a product, is required to undergo a third-party conformity assessment with a view to the placing on the market or putting into service of that product pursuant to the Union harmonisation legislation listed in Annex I.
+
+Article 13 - Transparency and provision of information to deployers
+1. High-risk AI systems shall be designed and developed in such a way as to ensure that their operation is sufficiently transparent to enable deployers to interpret the system's output and use it appropriately. An appropriate type and degree of transparency shall be ensured with a view to achieving compliance with the relevant obligations of the provider and the deployer.`
+  },
+  "pipeda": {
+    name: "PIPEDA Key Provisions (Sample)",
+    text: `PERSONAL INFORMATION PROTECTION AND ELECTRONIC DOCUMENTS ACT (PIPEDA)
+S.C. 2000, c. 5
+
+Schedule 1 - Principles Set Out in the National Standard of Canada Entitled Model Code for the Protection of Personal Information
+
+Principle 1 — Accountability
+An organization is responsible for personal information under its control and shall designate an individual or individuals who are accountable for the organization's compliance with the following principles.
+
+Principle 2 — Identifying Purposes
+The purposes for which personal information is collected shall be identified by the organization at or before the time the information is collected.
+
+Principle 3 — Consent
+The knowledge and consent of the individual are required for the collection, use, or disclosure of personal information, except where inappropriate. Note: In certain circumstances personal information can be collected, used, or disclosed without the knowledge and consent of the individual. For example, legal, medical, or security reasons may make it impossible or impractical to seek consent. When information is being collected for the detection and prevention of fraud or for law enforcement, seeking the consent of the individual might defeat the purpose of collecting the information. Seeking consent may be impossible or inappropriate when the individual is a minor, seriously ill, or mentally incapacitated.
+
+Principle 4 — Limiting Collection
+The collection of personal information shall be limited to that which is necessary for the purposes identified by the organization. Information shall be collected by fair and lawful means.
+
+Principle 5 — Limiting Use, Disclosure, and Retention
+Personal information shall not be used or disclosed for purposes other than those for which it was collected, except with the consent of the individual or as required by law. Personal information shall be retained only as long as necessary for the fulfillment of those purposes.
+
+Principle 6 — Accuracy
+Personal information shall be as accurate, complete, and up-to-date as is necessary for the purposes for which it is to be used.
+
+Principle 7 — Safeguards
+Personal information shall be protected by security safeguards appropriate to the sensitivity of the information.
+
+Principle 8 — Openness
+An organization shall make readily available to individuals specific information about its policies and practices relating to the management of personal information.
+
+Principle 9 — Individual Access
+Upon request, an individual shall be informed of the existence, use, and disclosure of his or her personal information and shall be given access to that information. An individual shall be able to challenge the accuracy and completeness of the information and have it amended as appropriate.
+
+Principle 10 — Challenging Compliance
+An individual shall be able to address a challenge concerning compliance with the above principles to the designated individual or individuals accountable for the organization's compliance.`
+  }
+};
+
+function loadSample(key) {
+  const s = SAMPLES[key];
+  document.getElementById("doc-name").value = s.name;
+  document.getElementById("doc-text").value = s.text;
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+renderDocsList();
+connect();
+</script>
+</body>
+</html>

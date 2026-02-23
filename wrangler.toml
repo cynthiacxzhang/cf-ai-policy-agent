@@ -1,0 +1,28 @@
+name = "cf-ai-policy-agent"
+main = "src/index.ts"
+compatibility_date = "2024-12-18"
+compatibility_flags = ["nodejs_compat"]
+
+[assets]
+directory = "public"
+binding = "ASSETS"
+
+[ai]
+binding = "AI"
+
+[[vectorize]]
+binding = "VECTORIZE"
+index_name = "policy-docs"
+
+[[durable_objects.bindings]]
+name = "PolicyChatAgent"
+class_name = "PolicyChatAgent"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["PolicyChatAgent"]
+
+[[workflows]]
+name = "document-ingestion"
+binding = "INGESTION_WORKFLOW"
+class_name = "IngestionWorkflow"

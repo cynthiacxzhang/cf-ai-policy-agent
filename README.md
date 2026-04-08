@@ -2,8 +2,6 @@
 
 A regulatory document Q&A agent built on Cloudflare's AI platform. Upload policy documents (EU AI Act, PIPEDA, GDPR, etc.) and chat with an agent that answers questions with **specific clause citations**, maintains full **conversation memory**, and grounds responses in your uploaded text via **RAG**.
 
-Built as part of the Cloudflare AI application assignment.
-
 **Live Demo:** https://cf-ai-policy-agent.cynthia-zhang-2016.workers.dev/
 
 ---

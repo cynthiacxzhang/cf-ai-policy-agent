@@ -1,16 +1,17 @@
-# cf_ai_policy_agent
+# PolicyLens
 
 A regulatory document Q&A agent built on Cloudflare's AI platform. Upload policy documents (EU AI Act, PIPEDA, GDPR, etc.) and chat with an agent that answers questions with **specific clause citations**, maintains full **conversation memory**, and grounds responses in your uploaded text via **RAG**.
 
-**Live Demo:** https://cf-ai-policy-agent.cynthia-zhang-2016.workers.dev/
+**Live Demo:** https://policy-lens.cynthia-zhang-2016.workers.dev
 
 ---
 
 ## Why this project
 
-This connects directly to real policy work: AI governance advisory (IPC Ontario), privacy law research (TRuST Lab RAG pipelines), and the gap that practitioners face when trying to navigate dense regulatory texts quickly. The agent acts as a precision retrieval layer over documents you actually care about.
+Policy and regulatory documents are dense, technical, and inaccessible to the people who need them most.: AI governance advisory (IPC Ontario), privacy law research (TRuST Lab RAG pipelines), and the gap that practitioners face when trying to navigate dense regulatory texts quickly. 
 
----
+The system lets non-technical stakeholders query complex policy corpora in plain language and receive grounded, cited answers rather than raw document dumps. The core challenge was retrieval quality: tuning chunking strategy and embedding alignment so that nuanced regulatory questions mapped correctly to relevant passages rather than superficially similar ones.
+
 
 ## Architecture
 
@@ -41,47 +42,6 @@ IngestionWorkflow (src/workflow.ts)                │  Workers AI Llama 3.3 →
 | Document ingestion | Cloudflare Workflows | Durable chunking → embedding → upsert pipeline |
 | Frontend | Cloudflare Assets (static) | Vanilla JS WebSocket chat + document upload UI |
 
----
-
-## Running locally
-
-### Prerequisites
-
-- [Wrangler](https://developers.cloudflare.com/workers/wrangler/) v4+ (`npm i -g wrangler`)
-- A Cloudflare account (free tier works)
-- Node 18+
-
-### 1. Clone and install
-
-```bash
-git clone <repo-url>
-cd cf_ai_policy_agent
-npm install
-```
-
-### 2. Create the Vectorize index
-
-```bash
-wrangler vectorize create policy-docs --dimensions=768 --metric=cosine
-```
-
-### 3. Deploy to Cloudflare (recommended for full functionality)
-
-Vectorize and Workflows require a deployed Worker — they are not fully available in local `wrangler dev` mode.
-
-```bash
-wrangler deploy
-```
-
-Visit the deployed URL (e.g. `https://cf-ai-policy-agent.<your-subdomain>.workers.dev`).
-
-### 4. (Optional) Local dev with remote bindings
-
-```bash
-wrangler dev --remote
-```
-
-This runs the Worker locally but routes AI/Vectorize/Workflow calls to Cloudflare.
 
 ---
 
@@ -127,18 +87,6 @@ cf_ai_policy_agent/
 ├── README.md
 └── PROMPTS.md
 ```
-
----
-
-## Key design decisions
-
-**Base `Agent` class, not `AIChatAgent`** — gives direct control over the WebSocket protocol and lets us inject RAG context into every message before hitting the LLM, without fighting the AI SDK's message format.
-
-**Vectorize similarity threshold (0.55)** — conservative enough to avoid noisy chunks being injected as context. Tune down to 0.4 if you find relevant content being filtered.
-
-**Workflow for ingestion** — gives durability: if the Worker is interrupted mid-index (large document), the Workflow resumes from the last completed step rather than re-processing from scratch.
-
-**Session per browser tab** — session ID is stored in `sessionStorage`, so each tab gets its own isolated DO instance and conversation history.
 
 ---
 
